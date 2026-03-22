@@ -40,7 +40,7 @@ python3 -m http.server 5500
 
 - 네이버 개발자센터에서 애플리케이션 생성
 - `Client ID`, `Redirect URI`를 앱 화면에 입력
+- 로컬 테스트 기준 Redirect URI/Callback URL 권장값: `http://localhost:5500/naver-callback.html`
 - 로그인 버튼 클릭
 
 > 참고: 브라우저/CORS 조건에 따라 프로필 API 호출이 제한될 수 있습니다. 이 경우에도 반자동 가져오기 흐름은 계속 사용할 수 있습니다.
-

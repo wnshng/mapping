@@ -1,5 +1,6 @@
 const STORAGE_KEY = "maping_places_v1";
 const NAVER_KEY = "maping_naver_v1";
+const NAVER_CALLBACK_RESULT_KEY = "maping_naver_callback_result_v1";
 
 const CATEGORY_OPTIONS = [
   "미분류",
@@ -66,6 +67,7 @@ const state = {
     redirectUri: "",
     accessToken: "",
     profile: null,
+    oauthState: "",
   },
 };
 
@@ -314,6 +316,7 @@ function saveNaver() {
       redirectUri: state.naver.redirectUri,
       accessToken: state.naver.accessToken,
       profile: state.naver.profile,
+      oauthState: state.naver.oauthState,
     })
   );
 }
@@ -325,6 +328,19 @@ function loadState() {
   state.naver.redirectUri = naver.redirectUri || "";
   state.naver.accessToken = naver.accessToken || "";
   state.naver.profile = naver.profile || null;
+  state.naver.oauthState = naver.oauthState || "";
+}
+
+function basePathname() {
+  if (window.location.pathname.endsWith("/")) {
+    return window.location.pathname;
+  }
+  const index = window.location.pathname.lastIndexOf("/");
+  return window.location.pathname.slice(0, index + 1);
+}
+
+function getDefaultNaverRedirectUri() {
+  return `${window.location.origin}${basePathname()}naver-callback.html`;
 }
 
 function setSelectOptions(select, values, includeAll = false) {
@@ -1149,6 +1165,41 @@ async function fetchNaverProfile(accessToken) {
   }
 }
 
+function consumeNaverCallbackResult() {
+  const raw =
+    sessionStorage.getItem(NAVER_CALLBACK_RESULT_KEY) ||
+    localStorage.getItem(NAVER_CALLBACK_RESULT_KEY);
+  if (!raw) {
+    return;
+  }
+
+  sessionStorage.removeItem(NAVER_CALLBACK_RESULT_KEY);
+  localStorage.removeItem(NAVER_CALLBACK_RESULT_KEY);
+  const payload = parseJSON(raw, null);
+  if (!payload) {
+    return;
+  }
+
+  if (payload.error) {
+    el.naverHelperMsg.textContent = `네이버 로그인 실패: ${payload.error_description || payload.error}`;
+    return;
+  }
+
+  if (!payload.access_token) {
+    return;
+  }
+
+  if (state.naver.oauthState && payload.state && payload.state !== state.naver.oauthState) {
+    el.naverHelperMsg.textContent = "네이버 로그인 state 검증에 실패했습니다. 다시 로그인해주세요.";
+    return;
+  }
+
+  state.naver.accessToken = payload.access_token;
+  state.naver.oauthState = "";
+  saveNaver();
+  fetchNaverProfile(payload.access_token);
+}
+
 function handleNaverOAuthCallback() {
   const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
   if (!hash) {
@@ -1161,6 +1212,7 @@ function handleNaverOAuthCallback() {
   }
 
   state.naver.accessToken = token;
+  state.naver.oauthState = "";
   saveNaver();
   history.replaceState({}, document.title, window.location.pathname + window.location.search);
   fetchNaverProfile(token);
@@ -1168,9 +1220,7 @@ function handleNaverOAuthCallback() {
 
 function startNaverOAuth() {
   const clientId = el.naverClientIdInput.value.trim();
-  const redirectUri =
-    el.naverRedirectInput.value.trim() ||
-    `${window.location.origin}${window.location.pathname}`;
+  const redirectUri = el.naverRedirectInput.value.trim() || getDefaultNaverRedirectUri();
 
   if (!clientId) {
     el.naverHelperMsg.textContent = "Client ID를 먼저 입력하고 연동 설정을 저장해주세요.";
@@ -1186,6 +1236,7 @@ function startNaverOAuth() {
 
   state.naver.clientId = clientId;
   state.naver.redirectUri = redirectUri;
+  state.naver.oauthState = stateToken;
   saveNaver();
   window.location.href = authorizeUrl;
 }
@@ -1193,6 +1244,7 @@ function startNaverOAuth() {
 function disconnectNaver() {
   state.naver.accessToken = "";
   state.naver.profile = null;
+  state.naver.oauthState = "";
   saveNaver();
   renderNaverStatus();
   el.naverHelperMsg.textContent = "네이버 연결이 해제되었습니다.";
@@ -1501,13 +1553,13 @@ function hydrateInputsFromState() {
   el.sortSelect.value = state.filters.sort;
 
   el.naverClientIdInput.value = state.naver.clientId || "";
-  el.naverRedirectInput.value =
-    state.naver.redirectUri || `${window.location.origin}${window.location.pathname}`;
+  el.naverRedirectInput.value = state.naver.redirectUri || getDefaultNaverRedirectUri();
 }
 
 function initialize() {
   loadState();
   recomputeDuplicateGroups();
+  consumeNaverCallbackResult();
   handleNaverOAuthCallback();
   refreshSelectOptions();
   hydrateInputsFromState();
