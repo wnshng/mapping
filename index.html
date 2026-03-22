@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maping - 네이버 즐겨찾기 정리 워크벤치</title>
+    <meta
+      name="description"
+      content="네이버지도 즐겨찾기를 텍스트/CSV로 가져와 분류, 태그, 중복 정리, 지역별 재탐색까지 지원하는 개인용 정리 서비스"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Maping</h1>
+          <p>네이버 즐겨찾기 정리를 위한 개인 워크벤치</p>
+        </div>
+        <div class="topbar-actions">
+          <span id="naverStatus" class="chip muted">네이버 미연결</span>
+          <button id="openExportBtn" class="btn secondary">내보내기</button>
+          <button id="connectNaverBtn" class="btn primary">네이버 로그인</button>
+          <button id="disconnectNaverBtn" class="btn ghost hidden">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="sidebar">
+          <section class="card">
+            <h2>빠른 입력</h2>
+            <form id="singleAddForm" class="form-grid">
+              <label>
+                장소명
+                <input id="singleName" required placeholder="예: 도토리카페 합정점" />
+              </label>
+              <label>
+                주소
+                <input id="singleAddress" placeholder="예: 서울 마포구 양화로 00" />
+              </label>
+              <label>
+                카테고리
+                <select id="singleCategory"></select>
+              </label>
+              <label>
+                태그(쉼표)
+                <input id="singleTags" placeholder="예: 데이트,주차가능" />
+              </label>
+              <label>
+                메모
+                <textarea id="singleMemo" rows="2" placeholder="추천 메뉴, 방문 팁"></textarea>
+              </label>
+              <button class="btn primary" type="submit">장소 추가</button>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>일괄 가져오기</h2>
+            <p class="subtext">줄 단위 붙여넣기: <code>장소명 | 주소 | 태그 | 메모</code></p>
+            <textarea
+              id="bulkTextInput"
+              rows="6"
+              placeholder="예: 연남동 국수집 | 서울 마포구 연남로 15 | 혼밥,국수 | 점심 웨이팅 짧음"
+            ></textarea>
+            <div class="row">
+              <button id="importTextBtn" class="btn secondary">텍스트 가져오기</button>
+              <label class="btn ghost file-btn">
+                CSV 업로드
+                <input id="csvFileInput" type="file" accept=".csv,text/csv" />
+              </label>
+            </div>
+            <p id="importResult" class="subtext"></p>
+          </section>
+
+          <section class="card">
+            <h2>네이버 가져오기 헬퍼</h2>
+            <p class="subtext">
+              공식 즐겨찾기 API 제한을 고려해, 로그인 + 반자동 추출 흐름으로 설계했습니다.
+            </p>
+            <label>
+              Naver Client ID
+              <input id="naverClientIdInput" placeholder="발급받은 Client ID" />
+            </label>
+            <label>
+              Redirect URI
+              <input id="naverRedirectInput" placeholder="예: http://localhost:5500/" />
+            </label>
+            <div class="row">
+              <button id="saveNaverConfigBtn" class="btn ghost">연동 설정 저장</button>
+              <a
+                class="btn ghost"
+                href="https://map.naver.com/v5/my/place"
+                target="_blank"
+                rel="noreferrer"
+                >네이버 저장목록 열기</a
+              >
+            </div>
+            <div class="bookmarklet-wrap">
+              <button id="copyBookmarkletBtn" class="btn secondary">북마클릿 코드 복사</button>
+              <p class="subtext">
+                네이버 저장목록 페이지에서 북마클릿 실행 후, 복사된 텍스트를 위 텍스트 박스에 붙여넣으세요.
+              </p>
+            </div>
+            <p id="naverHelperMsg" class="subtext"></p>
+          </section>
+
+          <section class="card">
+            <h2>필터</h2>
+            <label>
+              검색
+              <input id="searchInput" placeholder="장소명, 주소, 메모, 태그 검색" />
+            </label>
+            <label>
+              카테고리
+              <select id="categoryFilter"></select>
+            </label>
+            <label>
+              지역
+              <select id="areaFilter"></select>
+            </label>
+            <label>
+              태그
+              <select id="tagFilter"></select>
+            </label>
+            <label>
+              방문 상태
+              <select id="visitFilter">
+                <option value="">전체</option>
+                <option value="미방문">미방문</option>
+                <option value="방문함">방문함</option>
+                <option value="재방문희망">재방문희망</option>
+              </select>
+            </label>
+            <label>
+              정렬
+              <select id="sortSelect">
+                <option value="updated_desc">최근 수정순</option>
+                <option value="created_desc">최근 추가순</option>
+                <option value="name_asc">이름순</option>
+                <option value="priority_desc">정리 우선순위순</option>
+              </select>
+            </label>
+            <button id="resetFiltersBtn" class="btn ghost">필터 초기화</button>
+          </section>
+        </aside>
+
+        <section class="content">
+          <div class="stats-grid" id="statsGrid"></div>
+
+          <div class="card">
+            <div class="view-tabs" id="viewTabs">
+              <button data-view="all" class="tab active">전체 장소함</button>
+              <button data-view="category" class="tab">카테고리별</button>
+              <button data-view="area" class="tab">지역별</button>
+              <button data-view="tag" class="tab">태그별</button>
+              <button data-view="recent" class="tab">최근 추가</button>
+              <button data-view="duplicates" class="tab">중복 후보</button>
+              <button data-view="memo" class="tab">메모 있음</button>
+              <button data-view="reorganized" class="tab">재정리함</button>
+            </div>
+
+            <div id="bulkBar" class="bulk-bar hidden">
+              <strong id="selectedCount">0개 선택됨</strong>
+              <select id="bulkCategorySelect"></select>
+              <input id="bulkTagInput" placeholder="추가할 태그" />
+              <button id="bulkApplyBtn" class="btn secondary">일괄 적용</button>
+              <button id="bulkReorganizeBtn" class="btn ghost">재정리함으로 이동</button>
+              <button id="bulkDeleteBtn" class="btn danger">선택 삭제</button>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input id="selectAllCheckbox" type="checkbox" /></th>
+                    <th>장소</th>
+                    <th>카테고리</th>
+                    <th>지역</th>
+                    <th>태그</th>
+                    <th>상태</th>
+                    <th>메모</th>
+                    <th>수정일</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="placeTableBody"></tbody>
+              </table>
+              <div id="emptyState" class="empty hidden">
+                아직 장소가 없습니다. 왼쪽 패널에서 직접 추가하거나 텍스트/CSV를 가져오세요.
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <h2>중복 검토</h2>
+              <button id="refreshDuplicatesBtn" class="btn ghost">다시 탐지</button>
+            </div>
+            <div id="duplicateList" class="duplicate-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <h2>태그 관리</h2>
+            </div>
+            <div id="tagManager" class="tag-manager"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="editDialog">
+      <form id="editForm" class="dialog-form" method="dialog">
+        <h3>장소 상세 수정</h3>
+        <input id="editId" type="hidden" />
+        <label>
+          장소명
+          <input id="editName" required />
+        </label>
+        <label>
+          주소
+          <input id="editAddress" />
+        </label>
+        <label>
+          카테고리
+          <select id="editCategory"></select>
+        </label>
+        <label>
+          서브카테고리
+          <input id="editSubcategory" />
+        </label>
+        <label>
+          태그(쉼표)
+          <input id="editTags" />
+        </label>
+        <label>
+          방문 상태
+          <select id="editVisitStatus">
+            <option value="미방문">미방문</option>
+            <option value="방문함">방문함</option>
+            <option value="재방문희망">재방문희망</option>
+          </select>
+        </label>
+        <label>
+          저장 이유
+          <input id="editFavoriteReason" />
+        </label>
+        <label>
+          메모
+          <textarea id="editMemo" rows="4"></textarea>
+        </label>
+        <label class="checkbox-line">
+          <input id="editReorganized" type="checkbox" />
+          즐겨찾기 재정리함에 포함
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="cancelEditBtn" class="btn ghost">취소</button>
+          <button type="submit" class="btn primary">저장</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="exportDialog">
+      <form id="exportForm" class="dialog-form" method="dialog">
+        <h3>내보내기</h3>
+        <label>
+          범위
+          <select id="exportScope">
+            <option value="filtered">현재 필터 결과</option>
+            <option value="all">전체 장소</option>
+          </select>
+        </label>
+        <label>
+          형식
+          <select id="exportFormat">
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="cancelExportBtn" class="btn ghost">취소</button>
+          <button type="submit" class="btn primary">다운로드</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
