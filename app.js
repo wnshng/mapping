@@ -939,7 +939,59 @@ function parseNaverRawTextToInputs(rawText) {
       dedup.set(key, item);
     }
   });
-  return [...dedup.values()];
+  const parsed = [...dedup.values()];
+  if (parsed.length > 0) {
+    return parsed;
+  }
+
+  // Fallback: 이름/주소 2줄 페어 패턴 강제 추출
+  const cleanLines = lines.filter((line) => !isNaverNoiseLine(line) && !/^https?:\/\//i.test(line));
+  const fallbackResults = [];
+
+  for (let i = 0; i < cleanLines.length - 1; i += 1) {
+    const nameCandidate = cleanLines[i];
+    const addressCandidate = cleanLines[i + 1];
+
+    if (nameCandidate.startsWith("메모") || addressCandidate.startsWith("메모")) {
+      continue;
+    }
+    if (nameCandidate.length < 2) {
+      continue;
+    }
+
+    const likelyAddress =
+      looksLikeAddress(addressCandidate) ||
+      (/^(서울|경기|인천|부산|대전|대구|광주|울산|세종|제주|강원|충북|충남|전북|전남|경북|경남)/.test(
+        addressCandidate
+      ) &&
+        /\d/.test(addressCandidate));
+
+    if (!likelyAddress) {
+      continue;
+    }
+
+    const parsedName = splitTrailingSubcategory(nameCandidate);
+    fallbackResults.push({
+      place_name: parsedName.name,
+      address: addressCandidate,
+      category: detectCategory(`${parsedName.name} ${parsedName.subcategory}`).category,
+      subcategory: parsedName.subcategory,
+      tags: "",
+      memo: "",
+      raw_input: `${parsedName.name} | ${addressCandidate}`,
+      source_name: "text_import_naver_fallback",
+    });
+    i += 1;
+  }
+
+  const fallbackDedup = new Map();
+  fallbackResults.forEach((item) => {
+    const key = `${normalizeText(item.place_name)}|${normalizeText(item.address)}`;
+    if (!fallbackDedup.has(key)) {
+      fallbackDedup.set(key, item);
+    }
+  });
+  return [...fallbackDedup.values()];
 }
 
 function parseCSVRows(text) {
@@ -1510,7 +1562,12 @@ function bindEvents() {
     }
 
     const created = addPlaces(inputs);
-    el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
+    if (created === 0 && rawText.trim()) {
+      el.importResult.textContent =
+        "0개가 감지되었습니다. 복사한 원문 맨 위/아래에 불필요한 메뉴 텍스트가 섞인 경우 조금 줄여서 다시 시도해주세요.";
+    } else {
+      el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
+    }
     if (created > 0) {
       el.bulkTextInput.value = "";
     }
