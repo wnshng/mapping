@@ -207,6 +207,37 @@ function parseJSON(value, fallback) {
   }
 }
 
+const fallbackStorage = Object.create(null);
+
+function safeStorageGet(scope, key) {
+  try {
+    const storage = scope === "session" ? window.sessionStorage : window.localStorage;
+    return storage.getItem(key);
+  } catch (error) {
+    return Object.prototype.hasOwnProperty.call(fallbackStorage, key)
+      ? fallbackStorage[key]
+      : null;
+  }
+}
+
+function safeStorageSet(scope, key, value) {
+  try {
+    const storage = scope === "session" ? window.sessionStorage : window.localStorage;
+    storage.setItem(key, value);
+  } catch (error) {
+    fallbackStorage[key] = value;
+  }
+}
+
+function safeStorageRemove(scope, key) {
+  try {
+    const storage = scope === "session" ? window.sessionStorage : window.localStorage;
+    storage.removeItem(key);
+  } catch (error) {
+    delete fallbackStorage[key];
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -352,11 +383,12 @@ function makePlace(input) {
 }
 
 function savePlaces() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.places));
+  safeStorageSet("local", STORAGE_KEY, JSON.stringify(state.places));
 }
 
 function saveNaver() {
-  localStorage.setItem(
+  safeStorageSet(
+    "local",
     NAVER_KEY,
     JSON.stringify({
       clientId: state.naver.clientId,
@@ -369,8 +401,9 @@ function saveNaver() {
 }
 
 function loadState() {
-  state.places = parseJSON(localStorage.getItem(STORAGE_KEY), []);
-  const naver = parseJSON(localStorage.getItem(NAVER_KEY), {});
+  const parsedPlaces = parseJSON(safeStorageGet("local", STORAGE_KEY), []);
+  state.places = Array.isArray(parsedPlaces) ? parsedPlaces : [];
+  const naver = parseJSON(safeStorageGet("local", NAVER_KEY), {});
   state.naver.clientId = naver.clientId || "";
   state.naver.redirectUri = naver.redirectUri || "";
   state.naver.accessToken = naver.accessToken || "";
@@ -391,6 +424,9 @@ function getDefaultNaverRedirectUri() {
 }
 
 function setSelectOptions(select, values, includeAll = false) {
+  if (!select) {
+    return;
+  }
   const options = [];
   if (includeAll) {
     options.push(`<option value="">전체</option>`);
@@ -1404,14 +1440,14 @@ async function fetchNaverProfile(accessToken) {
 
 function consumeNaverCallbackResult() {
   const raw =
-    sessionStorage.getItem(NAVER_CALLBACK_RESULT_KEY) ||
-    localStorage.getItem(NAVER_CALLBACK_RESULT_KEY);
+    safeStorageGet("session", NAVER_CALLBACK_RESULT_KEY) ||
+    safeStorageGet("local", NAVER_CALLBACK_RESULT_KEY);
   if (!raw) {
     return;
   }
 
-  sessionStorage.removeItem(NAVER_CALLBACK_RESULT_KEY);
-  localStorage.removeItem(NAVER_CALLBACK_RESULT_KEY);
+  safeStorageRemove("session", NAVER_CALLBACK_RESULT_KEY);
+  safeStorageRemove("local", NAVER_CALLBACK_RESULT_KEY);
   const payload = parseJSON(raw, null);
   if (!payload) {
     return;
@@ -1880,21 +1916,47 @@ function bindEvents() {
 }
 
 function hydrateInputsFromState() {
-  el.singleCategory.value = "미분류";
-  el.bulkCategorySelect.value = "미분류";
+  if (el.singleCategory) {
+    el.singleCategory.value = "미분류";
+  }
+  if (el.bulkCategorySelect) {
+    el.bulkCategorySelect.value = "미분류";
+  }
 
-  el.searchInput.value = state.filters.query;
-  el.categoryFilter.value = state.filters.category;
-  el.areaFilter.value = state.filters.area;
-  el.tagFilter.value = state.filters.tag;
-  el.visitFilter.value = state.filters.visitStatus;
-  el.sortSelect.value = state.filters.sort;
+  if (el.searchInput) {
+    el.searchInput.value = state.filters.query;
+  }
+  if (el.categoryFilter) {
+    el.categoryFilter.value = state.filters.category;
+  }
+  if (el.areaFilter) {
+    el.areaFilter.value = state.filters.area;
+  }
+  if (el.tagFilter) {
+    el.tagFilter.value = state.filters.tag;
+  }
+  if (el.visitFilter) {
+    el.visitFilter.value = state.filters.visitStatus;
+  }
+  if (el.sortSelect) {
+    el.sortSelect.value = state.filters.sort;
+  }
 
-  el.naverClientIdInput.value = state.naver.clientId || "";
-  el.naverRedirectInput.value = state.naver.redirectUri || getDefaultNaverRedirectUri();
+  if (el.naverClientIdInput) {
+    el.naverClientIdInput.value = state.naver.clientId || "";
+  }
+  if (el.naverRedirectInput) {
+    el.naverRedirectInput.value = state.naver.redirectUri || getDefaultNaverRedirectUri();
+  }
 }
 
 function initialize() {
+  const essential = ["importTextBtn", "bulkTextInput", "importResult", "singleAddForm", "placeTableBody"];
+  const missing = essential.filter((key) => !el[key]);
+  if (missing.length > 0) {
+    throw new Error(`필수 DOM 누락: ${missing.join(", ")}`);
+  }
+
   loadState();
   recomputeDuplicateGroups();
   consumeNaverCallbackResult();
@@ -1912,8 +1974,9 @@ function attachEmergencyImportFallback(error) {
   const importBtn = document.getElementById("importTextBtn");
   const inputBox = document.getElementById("bulkTextInput");
   if (importResult) {
+    const reason = error && error.message ? ` (${error.message})` : "";
     importResult.textContent =
-      "앱 일부 기능 로드에 실패했습니다. 긴 텍스트 가져오기만 가능한 응급 모드로 전환합니다.";
+      `앱 일부 기능 로드에 실패했습니다. 긴 텍스트 가져오기만 가능한 응급 모드로 전환합니다.${reason}`;
   }
   if (!importBtn || !inputBox || importBtn.dataset.emergencyBound === "true") {
     return;
@@ -1930,7 +1993,8 @@ function attachEmergencyImportFallback(error) {
     }
     const inputs = parseNaverRawTextToInputs(rawText);
     const now = nowIso();
-    const existing = parseJSON(localStorage.getItem(STORAGE_KEY), []);
+    const existingRaw = parseJSON(safeStorageGet("local", STORAGE_KEY), []);
+    const existing = Array.isArray(existingRaw) ? existingRaw : [];
     const created = inputs.map((item) =>
       makePlace({
         ...item,
@@ -1938,7 +2002,7 @@ function attachEmergencyImportFallback(error) {
         updated_at: now,
       })
     );
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...created, ...existing]));
+    safeStorageSet("local", STORAGE_KEY, JSON.stringify([...created, ...existing]));
     if (importResult) {
       importResult.textContent = `응급 모드로 ${created.length}개를 저장했습니다. 새로고침하면 반영됩니다.`;
     }
