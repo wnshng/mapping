@@ -1540,38 +1540,64 @@ function bindEvents() {
     }
   });
 
-  el.importTextBtn.addEventListener("click", () => {
-    const rawText = el.bulkTextInput.value;
-    const lines = rawText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const hasStructuredDelimiter = lines.some((line) => line.includes("|") || line.includes("\t"));
-    const hasUrlOnly = lines.some((line) => /^https?:\/\//i.test(line));
-    let inputs = [];
+  const runBulkImport = () => {
+    const rawText = String(el.bulkTextInput.value || "");
+    if (!rawText.trim()) {
+      el.importResult.textContent = "붙여넣은 텍스트가 없습니다. 먼저 텍스트를 넣어주세요.";
+      return;
+    }
 
-    if (hasStructuredDelimiter || hasUrlOnly) {
-      inputs = lines.map(parseLineToInput).filter(Boolean);
-    } else {
-      const naverRaw = parseNaverRawTextToInputs(rawText);
-      if (naverRaw.length > 0) {
-        inputs = naverRaw;
-      } else {
+    el.importResult.textContent = "텍스트 분석 중...";
+
+    try {
+      const lines = rawText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const hasStructuredDelimiter = lines.some((line) => line.includes("|") || line.includes("\t"));
+      const hasUrlOnly = lines.some((line) => /^https?:\/\//i.test(line));
+      let inputs = [];
+
+      if (hasStructuredDelimiter || hasUrlOnly) {
         inputs = lines.map(parseLineToInput).filter(Boolean);
+      } else {
+        const naverRaw = parseNaverRawTextToInputs(rawText);
+        if (naverRaw.length > 0) {
+          inputs = naverRaw;
+        } else {
+          inputs = lines.map(parseLineToInput).filter(Boolean);
+        }
       }
-    }
 
-    const created = addPlaces(inputs);
-    if (created === 0 && rawText.trim()) {
-      el.importResult.textContent =
-        "0개가 감지되었습니다. 복사한 원문 맨 위/아래에 불필요한 메뉴 텍스트가 섞인 경우 조금 줄여서 다시 시도해주세요.";
-    } else {
-      el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
+      const created = addPlaces(inputs);
+      if (created === 0 && rawText.trim()) {
+        el.importResult.textContent =
+          "0개가 감지되었습니다. 원문의 첫 20줄만 넣어 테스트해보세요. 그래도 0개면 배포 버전 문제일 수 있습니다.";
+      } else {
+        el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
+      }
+      if (created > 0) {
+        el.bulkTextInput.value = "";
+      }
+    } catch (error) {
+      console.error("bulk import failed", error);
+      el.importResult.textContent = "가져오기 중 오류가 발생했습니다. 페이지 새로고침 후 다시 시도해주세요.";
     }
-    if (created > 0) {
-      el.bulkTextInput.value = "";
+  };
+
+  el.importTextBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    runBulkImport();
+  });
+
+  el.bulkTextInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      runBulkImport();
     }
   });
+
+  window.mapingDebugRunBulkImport = runBulkImport;
 
   el.csvFileInput.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
