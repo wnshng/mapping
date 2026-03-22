@@ -403,7 +403,11 @@ function saveNaver() {
 function loadState() {
   const parsedPlaces = parseJSON(safeStorageGet("local", STORAGE_KEY), []);
   state.places = Array.isArray(parsedPlaces) ? parsedPlaces : [];
-  const naver = parseJSON(safeStorageGet("local", NAVER_KEY), {});
+  const parsedNaver = parseJSON(safeStorageGet("local", NAVER_KEY), {});
+  const naver =
+    parsedNaver && typeof parsedNaver === "object" && !Array.isArray(parsedNaver)
+      ? parsedNaver
+      : {};
   state.naver.clientId = naver.clientId || "";
   state.naver.redirectUri = naver.redirectUri || "";
   state.naver.accessToken = naver.accessToken || "";
