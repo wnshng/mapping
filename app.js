@@ -238,6 +238,17 @@ function safeStorageRemove(scope, key) {
   }
 }
 
+function isPersistentLocalStorageAvailable() {
+  try {
+    const probeKey = "__maping_storage_probe__";
+    window.localStorage.setItem(probeKey, "1");
+    window.localStorage.removeItem(probeKey);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -402,7 +413,9 @@ function saveNaver() {
 
 function loadState() {
   const parsedPlaces = parseJSON(safeStorageGet("local", STORAGE_KEY), []);
-  state.places = Array.isArray(parsedPlaces) ? parsedPlaces : [];
+  state.places = Array.isArray(parsedPlaces)
+    ? parsedPlaces.filter((item) => item && typeof item === "object")
+    : [];
   const parsedNaver = parseJSON(safeStorageGet("local", NAVER_KEY), {});
   const naver =
     parsedNaver && typeof parsedNaver === "object" && !Array.isArray(parsedNaver)
@@ -1998,17 +2011,30 @@ function attachEmergencyImportFallback(error) {
     const inputs = parseNaverRawTextToInputs(rawText);
     const now = nowIso();
     const existingRaw = parseJSON(safeStorageGet("local", STORAGE_KEY), []);
-    const existing = Array.isArray(existingRaw) ? existingRaw : [];
-    const created = inputs.map((item) =>
-      makePlace({
-        ...item,
-        created_at: now,
-        updated_at: now,
-      })
-    );
+    const existing = Array.isArray(existingRaw)
+      ? existingRaw.filter((item) => item && typeof item === "object")
+      : [];
+    const created = inputs
+      .map((item) =>
+        makePlace({
+          ...item,
+          created_at: now,
+          updated_at: now,
+        })
+      )
+      .filter(Boolean);
+    if (created.length === 0) {
+      if (importResult) {
+        importResult.textContent = "가져올 장소를 찾지 못했습니다. 형식을 다시 확인해 주세요.";
+      }
+      return;
+    }
     safeStorageSet("local", STORAGE_KEY, JSON.stringify([...created, ...existing]));
     if (importResult) {
-      importResult.textContent = `응급 모드로 ${created.length}개를 저장했습니다. 새로고침하면 반영됩니다.`;
+      const persistentHint = isPersistentLocalStorageAvailable()
+        ? "새로고침하면 반영됩니다."
+        : "브라우저 저장이 차단되어 새로고침 시 사라질 수 있습니다. 사파리 설정에서 쿠키/로컬 저장 차단을 해제해 주세요.";
+      importResult.textContent = `응급 모드로 ${created.length}개를 저장했습니다. ${persistentHint}`;
     }
   });
 }
