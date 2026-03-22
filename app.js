@@ -1548,41 +1548,47 @@ function bindEvents() {
     }
 
     el.importResult.textContent = "텍스트 분석 중...";
+    el.importTextBtn.disabled = true;
 
-    try {
-      const lines = rawText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const hasStructuredDelimiter = lines.some((line) => line.includes("|") || line.includes("\t"));
-      const hasUrlOnly = lines.some((line) => /^https?:\/\//i.test(line));
-      let inputs = [];
+    // 대량 텍스트에서 UI가 멈춰 보이지 않도록 다음 틱에서 파싱 실행
+    window.setTimeout(() => {
+      try {
+        const lines = rawText
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const hasStructuredDelimiter = lines.some((line) => line.includes("|") || line.includes("\t"));
+        const hasUrlOnly = lines.some((line) => /^https?:\/\//i.test(line));
+        let inputs = [];
 
-      if (hasStructuredDelimiter || hasUrlOnly) {
-        inputs = lines.map(parseLineToInput).filter(Boolean);
-      } else {
-        const naverRaw = parseNaverRawTextToInputs(rawText);
-        if (naverRaw.length > 0) {
-          inputs = naverRaw;
-        } else {
+        if (hasStructuredDelimiter || hasUrlOnly) {
           inputs = lines.map(parseLineToInput).filter(Boolean);
+        } else {
+          const naverRaw = parseNaverRawTextToInputs(rawText);
+          if (naverRaw.length > 0) {
+            inputs = naverRaw;
+          } else {
+            inputs = lines.map(parseLineToInput).filter(Boolean);
+          }
         }
-      }
 
-      const created = addPlaces(inputs);
-      if (created === 0 && rawText.trim()) {
-        el.importResult.textContent =
-          "0개가 감지되었습니다. 원문의 첫 20줄만 넣어 테스트해보세요. 그래도 0개면 배포 버전 문제일 수 있습니다.";
-      } else {
-        el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
+        const created = addPlaces(inputs);
+        if (created === 0 && rawText.trim()) {
+          el.importResult.textContent =
+            "0개가 감지되었습니다. 원문의 첫 20줄만 넣어 테스트해보세요. 그래도 0개면 배포 버전 문제일 수 있습니다.";
+        } else {
+          el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
+        }
+        if (created > 0) {
+          el.bulkTextInput.value = "";
+        }
+      } catch (error) {
+        console.error("bulk import failed", error);
+        el.importResult.textContent = "가져오기 중 오류가 발생했습니다. 페이지 새로고침 후 다시 시도해주세요.";
+      } finally {
+        el.importTextBtn.disabled = false;
       }
-      if (created > 0) {
-        el.bulkTextInput.value = "";
-      }
-    } catch (error) {
-      console.error("bulk import failed", error);
-      el.importResult.textContent = "가져오기 중 오류가 발생했습니다. 페이지 새로고침 후 다시 시도해주세요.";
-    }
+    }, 0);
   };
 
   el.importTextBtn.addEventListener("click", (event) => {
@@ -1898,6 +1904,49 @@ function initialize() {
   fillBookmarkletCodeBox(getBookmarkletCode());
   bindEvents();
   renderAll();
+  window.__MAPING_APP_READY = true;
+}
+function attachEmergencyImportFallback(error) {
+  console.error("maping initialize failed", error);
+  const importResult = document.getElementById("importResult");
+  const importBtn = document.getElementById("importTextBtn");
+  const inputBox = document.getElementById("bulkTextInput");
+  if (importResult) {
+    importResult.textContent =
+      "앱 일부 기능 로드에 실패했습니다. 긴 텍스트 가져오기만 가능한 응급 모드로 전환합니다.";
+  }
+  if (!importBtn || !inputBox || importBtn.dataset.emergencyBound === "true") {
+    return;
+  }
+  importBtn.dataset.emergencyBound = "true";
+  importBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    const rawText = String(inputBox.value || "");
+    if (!rawText.trim()) {
+      if (importResult) {
+        importResult.textContent = "붙여넣은 텍스트가 없습니다.";
+      }
+      return;
+    }
+    const inputs = parseNaverRawTextToInputs(rawText);
+    const now = nowIso();
+    const existing = parseJSON(localStorage.getItem(STORAGE_KEY), []);
+    const created = inputs.map((item) =>
+      makePlace({
+        ...item,
+        created_at: now,
+        updated_at: now,
+      })
+    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...created, ...existing]));
+    if (importResult) {
+      importResult.textContent = `응급 모드로 ${created.length}개를 저장했습니다. 새로고침하면 반영됩니다.`;
+    }
+  });
 }
 
-initialize();
+try {
+  initialize();
+} catch (error) {
+  attachEmergencyImportFallback(error);
+}
