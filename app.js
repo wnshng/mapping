@@ -1254,6 +1254,9 @@ function disconnectNaver() {
 }
 
 function getBookmarkletCode() {
+  if (typeof window.getMapingBookmarkletCode === "function") {
+    return window.getMapingBookmarkletCode();
+  }
   return `javascript:(()=>{const out=[];const seen=new Set();const links=[...new Set(Array.from(document.querySelectorAll('a[href*="/place/"],a[href*="entry/place"],a[href*="map.naver.com"]')))];links.forEach((a)=>{const href=a.href||'';const container=a.closest('li,article,div');const raw=(container?container.innerText:a.innerText)||'';const lines=raw.split('\\n').map((s)=>s.trim()).filter(Boolean);const name=(a.innerText||lines[0]||'').split('\\n')[0].trim();const address=lines.find((line)=>/[가-힣]+(시|도)\\s+[가-힣]+(시|군|구)/.test(line))||'';if(name&&name.length>1){const key=name+'|'+address;if(!seen.has(key)){seen.add(key);out.push([name,address,'','',''+href].join('|'));}}});const text=out.join('\\n');if(!text){alert('장소를 찾지 못했습니다. 저장목록 리스트가 화면에 보이는 상태에서 다시 시도하세요.');return;}if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(()=>alert('복사 완료: 앱의 텍스트 가져오기에 붙여넣으세요.')).catch(()=>prompt('아래 텍스트를 복사하세요',text));}else{prompt('아래 텍스트를 복사하세요',text);}})();`;
 }
 
