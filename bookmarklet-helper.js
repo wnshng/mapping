@@ -2,7 +2,103 @@
   var RESULT_TEXT = "아래 코드를 복사해 북마크 URL에 붙여넣으세요.";
 
   function getCode() {
-    return "javascript:(()=>{const out=[];const seen=new Set();const links=[...new Set(Array.from(document.querySelectorAll('a[href*=\"/place/\"],a[href*=\"entry/place\"],a[href*=\"map.naver.com\"]')))];links.forEach((a)=>{const href=a.href||'';const container=a.closest('li,article,div');const raw=(container?container.innerText:a.innerText)||'';const lines=raw.split('\\\\n').map((s)=>s.trim()).filter(Boolean);const name=(a.innerText||lines[0]||'').split('\\\\n')[0].trim();const address=lines.find((line)=>/[가-힣]+(시|도)\\\\s+[가-힣]+(시|군|구)/.test(line))||'';if(name&&name.length>1){const key=name+'|'+address;if(!seen.has(key)){seen.add(key);out.push([name,address,'','',''+href].join('|'));}}});const text=out.join('\\\\n');if(!text){alert('장소를 찾지 못했습니다. 저장목록 리스트가 화면에 보이는 상태에서 다시 시도하세요.');return;}if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(()=>alert('복사 완료: 앱의 텍스트 가져오기에 붙여넣으세요.')).catch(()=>prompt('아래 텍스트를 복사하세요',text));}else{prompt('아래 텍스트를 복사하세요',text);}})();";
+    function extractor() {
+      var out = [];
+      var seen = new Set();
+
+      function toAbsolute(href) {
+        try {
+          return new URL(href, location.href).href;
+        } catch (error) {
+          return href || "";
+        }
+      }
+
+      function isPlaceHref(href) {
+        return /\/(p\/)?entry\/place\/|\/place\/[a-zA-Z0-9_-]+/i.test(href || "");
+      }
+
+      function isNoiseName(name) {
+        var normalized = String(name || "").replace(/\s+/g, "");
+        return (
+          normalized === "지도" ||
+          normalized === "홈" ||
+          normalized === "MY" ||
+          normalized === "내장소" ||
+          normalized === "내장소보기"
+        );
+      }
+
+      var anchors = Array.from(document.querySelectorAll("a[href]")).filter(function (a) {
+        var href = a.getAttribute("href") || a.href || "";
+        return isPlaceHref(href);
+      });
+
+      anchors.forEach(function (a) {
+        var href = toAbsolute(a.getAttribute("href") || a.href || "");
+        if (!href || /^https?:\/\/map\.naver\.com\/?([?#].*)?$/i.test(href)) {
+          return;
+        }
+
+        var container = a.closest("li,article,[role='listitem'],div");
+        var raw = (container ? container.innerText : a.innerText) || "";
+        var lines = raw
+          .split(/\n+/)
+          .map(function (s) {
+            return s.trim();
+          })
+          .filter(Boolean);
+
+        var name = (
+          a.getAttribute("aria-label") ||
+          a.innerText ||
+          lines[0] ||
+          ""
+        )
+          .split("\n")[0]
+          .trim();
+        if (!name || name.length < 2 || isNoiseName(name)) {
+          return;
+        }
+
+        var address =
+          lines.find(function (line) {
+            return /([가-힣]+(시|도)\s+)?[가-힣0-9]+(시|군|구)\s+[가-힣0-9]+(로|길|동|읍|면)/.test(line);
+          }) ||
+          lines.find(function (line) {
+            return /(로|길|동|리)/.test(line) && /\d/.test(line);
+          }) ||
+          "";
+
+        var key = name + "|" + address + "|" + href;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        out.push([name, address, "", "", href].join("|"));
+      });
+
+      if (!out.length) {
+        alert("장소를 찾지 못했습니다. 저장목록 리스트를 화면에 보이게 스크롤한 뒤 다시 실행하세요.");
+        return;
+      }
+
+      var text = out.join("\n");
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard
+          .writeText(text)
+          .then(function () {
+            alert("복사 완료: 앱의 텍스트 가져오기에 붙여넣으세요.");
+          })
+          .catch(function () {
+            prompt("아래 텍스트를 복사하세요", text);
+          });
+      } else {
+        prompt("아래 텍스트를 복사하세요", text);
+      }
+    }
+
+    return "javascript:(" + extractor.toString() + ")();";
   }
 
   function fillBox() {
