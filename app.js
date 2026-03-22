@@ -760,6 +760,105 @@ function parseLineToInput(line) {
   };
 }
 
+function looksLikeAddress(line) {
+  const text = String(line || "").trim();
+  if (!text) {
+    return false;
+  }
+  const strongPattern = /([가-힣]+(시|도)\s+)?[가-힣0-9]+(시|군|구)\s+[가-힣0-9\s]+(로|길|동|읍|면)\s*\d*/;
+  const fallbackPattern = /[가-힣0-9]+\s*\d{1,4}(-\d{1,4})?/;
+  return strongPattern.test(text) || fallbackPattern.test(text);
+}
+
+function isNaverNoiseLine(line) {
+  const text = String(line || "").trim().replace(/\s+/g, "");
+  if (!text) {
+    return true;
+  }
+  const noiseSet = new Set([
+    "내장소",
+    "전체리스트보기",
+    "편집",
+    "최신순",
+    "전체",
+    "음식점",
+    "BAR",
+    "카페",
+    "생활/문화",
+    "저장",
+    "길찾기",
+    "버스",
+    "지하철",
+    "기차",
+    "더보기",
+    "다운로드",
+    "인쇄",
+    "공유",
+    "반경",
+    "면적",
+    "거리뷰",
+    "비공개",
+  ]);
+  if (noiseSet.has(text)) {
+    return true;
+  }
+  if (/^\d+개$/.test(text) || /^\d+$/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
+function parseNaverRawTextToInputs(rawText) {
+  const lines = String(rawText || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    return [];
+  }
+
+  const results = [];
+  let pendingName = "";
+
+  lines.forEach((line) => {
+    if (isNaverNoiseLine(line)) {
+      return;
+    }
+
+    if (/^https?:\/\//i.test(line)) {
+      return;
+    }
+
+    if (looksLikeAddress(line)) {
+      if (pendingName && pendingName.length >= 2) {
+        results.push({
+          place_name: pendingName,
+          address: line,
+          tags: "",
+          memo: "",
+          raw_input: `${pendingName} | ${line}`,
+          source_name: "text_import_naver_raw",
+        });
+      }
+      pendingName = "";
+      return;
+    }
+
+    if (line.length <= 60) {
+      pendingName = line;
+    }
+  });
+
+  const dedup = new Map();
+  results.forEach((item) => {
+    const key = `${normalizeText(item.place_name)}|${normalizeText(item.address)}`;
+    if (!dedup.has(key)) {
+      dedup.set(key, item);
+    }
+  });
+  return [...dedup.values()];
+}
+
 function parseCSVRows(text) {
   const rows = [];
   let current = [];
@@ -1307,11 +1406,26 @@ function bindEvents() {
   });
 
   el.importTextBtn.addEventListener("click", () => {
-    const lines = el.bulkTextInput.value
+    const rawText = el.bulkTextInput.value;
+    const lines = rawText
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
-    const inputs = lines.map(parseLineToInput).filter(Boolean);
+    const hasStructuredDelimiter = lines.some((line) => line.includes("|") || line.includes("\t"));
+    const hasUrlOnly = lines.some((line) => /^https?:\/\//i.test(line));
+    let inputs = [];
+
+    if (hasStructuredDelimiter || hasUrlOnly) {
+      inputs = lines.map(parseLineToInput).filter(Boolean);
+    } else {
+      const naverRaw = parseNaverRawTextToInputs(rawText);
+      if (naverRaw.length > 0) {
+        inputs = naverRaw;
+      } else {
+        inputs = lines.map(parseLineToInput).filter(Boolean);
+      }
+    }
+
     const created = addPlaces(inputs);
     el.importResult.textContent = `${created}개 장소를 텍스트에서 가져왔습니다.`;
     if (created > 0) {
