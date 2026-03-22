@@ -48,6 +48,50 @@ const TAG_RULES = {
 };
 
 const VISIT_OPTIONS = ["미방문", "방문함", "재방문희망"];
+const TRAILING_SUBCATEGORY_HINTS = [
+  "스파게티,파스타전문",
+  "곱창,막창,양",
+  "칼국수,만두",
+  "초밥,롤",
+  "카페,디저트",
+  "육류,고기요리",
+  "요리주점",
+  "일본식라면",
+  "베트남음식",
+  "이탈리아음식",
+  "멕시코,남미음식",
+  "장어,먹장어요리",
+  "돼지고기구이",
+  "주꾸미요리",
+  "족발,보쌈",
+  "순대,순댓국",
+  "아이스크림",
+  "브런치카페",
+  "덮밥",
+  "우동,소바",
+  "관람,체험",
+  "중식당",
+  "일식당",
+  "이자카야",
+  "양갈비",
+  "양식",
+  "한식",
+  "피자",
+  "햄버거",
+  "떡볶이",
+  "스테이크,립",
+  "닭갈비",
+  "퓨전음식",
+  "베이커리",
+  "카레",
+  "돈가스",
+  "닭발",
+  "바(BAR)",
+  "술집",
+  "거리,골목",
+  "슈퍼,마트",
+  "만두",
+];
 
 const state = {
   places: [],
@@ -819,6 +863,24 @@ function parseNaverRawTextToInputs(rawText) {
 
   const results = [];
   let pendingName = "";
+  let pendingSubcategory = "";
+  let lastInsertedIndex = -1;
+
+  const splitTrailingSubcategory = (line) => {
+    const text = String(line || "").trim();
+    for (const suffix of TRAILING_SUBCATEGORY_HINTS) {
+      if (text.length > suffix.length + 1 && text.endsWith(suffix)) {
+        return {
+          name: text.slice(0, -suffix.length).trim(),
+          subcategory: suffix,
+        };
+      }
+    }
+    return {
+      name: text,
+      subcategory: "",
+    };
+  };
 
   lines.forEach((line) => {
     if (isNaverNoiseLine(line)) {
@@ -826,26 +888,47 @@ function parseNaverRawTextToInputs(rawText) {
     }
 
     if (/^https?:\/\//i.test(line)) {
+      if (lastInsertedIndex >= 0) {
+        results[lastInsertedIndex].source_url = line;
+      }
+      return;
+    }
+
+    if (line.startsWith("메모")) {
+      if (lastInsertedIndex >= 0) {
+        const memoText = line.replace(/^메모\s*/, "").trim();
+        if (memoText) {
+          const prevMemo = results[lastInsertedIndex].memo || "";
+          results[lastInsertedIndex].memo = mergeUniqueText(prevMemo, memoText);
+        }
+      }
       return;
     }
 
     if (looksLikeAddress(line)) {
       if (pendingName && pendingName.length >= 2) {
+        const detected = detectCategory(`${pendingName} ${pendingSubcategory}`).category;
         results.push({
           place_name: pendingName,
           address: line,
+          category: detected,
+          subcategory: pendingSubcategory,
           tags: "",
           memo: "",
           raw_input: `${pendingName} | ${line}`,
           source_name: "text_import_naver_raw",
         });
+        lastInsertedIndex = results.length - 1;
       }
       pendingName = "";
+      pendingSubcategory = "";
       return;
     }
 
     if (line.length <= 60) {
-      pendingName = line;
+      const parsed = splitTrailingSubcategory(line);
+      pendingName = parsed.name;
+      pendingSubcategory = parsed.subcategory;
     }
   });
 
