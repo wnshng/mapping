@@ -93,6 +93,9 @@ const el = {
   naverRedirectInput: document.getElementById("naverRedirectInput"),
   saveNaverConfigBtn: document.getElementById("saveNaverConfigBtn"),
   copyBookmarkletBtn: document.getElementById("copyBookmarkletBtn"),
+  bookmarkletManualWrap: document.getElementById("bookmarkletManualWrap"),
+  bookmarkletCodeBox: document.getElementById("bookmarkletCodeBox"),
+  selectBookmarkletBtn: document.getElementById("selectBookmarkletBtn"),
   naverHelperMsg: document.getElementById("naverHelperMsg"),
 
   searchInput: document.getElementById("searchInput"),
@@ -1254,6 +1257,31 @@ function getBookmarkletCode() {
   return `javascript:(()=>{const out=[];const seen=new Set();const links=[...new Set(Array.from(document.querySelectorAll('a[href*="/place/"],a[href*="entry/place"],a[href*="map.naver.com"]')))];links.forEach((a)=>{const href=a.href||'';const container=a.closest('li,article,div');const raw=(container?container.innerText:a.innerText)||'';const lines=raw.split('\\n').map((s)=>s.trim()).filter(Boolean);const name=(a.innerText||lines[0]||'').split('\\n')[0].trim();const address=lines.find((line)=>/[가-힣]+(시|도)\\s+[가-힣]+(시|군|구)/.test(line))||'';if(name&&name.length>1){const key=name+'|'+address;if(!seen.has(key)){seen.add(key);out.push([name,address,'','',''+href].join('|'));}}});const text=out.join('\\n');if(!text){alert('장소를 찾지 못했습니다. 저장목록 리스트가 화면에 보이는 상태에서 다시 시도하세요.');return;}if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(()=>alert('복사 완료: 앱의 텍스트 가져오기에 붙여넣으세요.')).catch(()=>prompt('아래 텍스트를 복사하세요',text));}else{prompt('아래 텍스트를 복사하세요',text);}})();`;
 }
 
+function fillBookmarkletCodeBox(code) {
+  if (el.bookmarkletCodeBox) {
+    el.bookmarkletCodeBox.value = code;
+  }
+}
+
+function fallbackCopyText(text) {
+  const temp = document.createElement("textarea");
+  temp.value = text;
+  temp.setAttribute("readonly", "true");
+  temp.style.position = "fixed";
+  temp.style.opacity = "0";
+  document.body.appendChild(temp);
+  temp.focus();
+  temp.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (error) {
+    copied = false;
+  }
+  temp.remove();
+  return copied;
+}
+
 function bindEvents() {
   el.singleAddForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1531,14 +1559,35 @@ function bindEvents() {
 
   el.copyBookmarkletBtn.addEventListener("click", async () => {
     const code = getBookmarkletCode();
+    fillBookmarkletCodeBox(code);
     try {
       await navigator.clipboard.writeText(code);
       el.naverHelperMsg.textContent = "북마클릿 코드가 복사되었습니다. 북마크 URL로 등록해 실행하세요.";
     } catch (error) {
-      el.naverHelperMsg.textContent = "자동 복사에 실패했습니다. 브라우저 보안 정책으로 인해 수동 복사가 필요할 수 있습니다.";
-      window.prompt("아래 북마클릿 코드를 복사하세요", code);
+      const copiedByFallback = fallbackCopyText(code);
+      if (copiedByFallback) {
+        el.naverHelperMsg.textContent =
+          "클립보드 API는 실패했지만 대체 방식으로 복사했습니다. 북마크 URL에 붙여넣어주세요.";
+      } else {
+        if (el.bookmarkletManualWrap) {
+          el.bookmarkletManualWrap.open = true;
+        }
+        el.naverHelperMsg.textContent =
+          "자동 복사에 실패했습니다. 아래 '수동 복사 열기'에서 코드를 직접 복사해주세요.";
+      }
     }
   });
+
+  if (el.selectBookmarkletBtn) {
+    el.selectBookmarkletBtn.addEventListener("click", () => {
+      const code = getBookmarkletCode();
+      fillBookmarkletCodeBox(code);
+      if (el.bookmarkletCodeBox) {
+        el.bookmarkletCodeBox.focus();
+        el.bookmarkletCodeBox.select();
+      }
+    });
+  }
 }
 
 function hydrateInputsFromState() {
@@ -1563,6 +1612,7 @@ function initialize() {
   handleNaverOAuthCallback();
   refreshSelectOptions();
   hydrateInputsFromState();
+  fillBookmarkletCodeBox(getBookmarkletCode());
   bindEvents();
   renderAll();
 }

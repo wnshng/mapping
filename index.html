@@ -100,6 +100,18 @@
               <p class="subtext">
                 네이버 저장목록 페이지에서 북마클릿 실행 후, 복사된 텍스트를 위 텍스트 박스에 붙여넣으세요.
               </p>
+              <details id="bookmarkletManualWrap">
+                <summary class="subtext">복사가 안 되면 수동 복사 열기</summary>
+                <textarea
+                  id="bookmarkletCodeBox"
+                  rows="5"
+                  readonly
+                  aria-label="북마클릿 코드"
+                ></textarea>
+                <div class="row">
+                  <button id="selectBookmarkletBtn" class="btn ghost" type="button">코드 전체 선택</button>
+                </div>
+              </details>
             </div>
             <p id="naverHelperMsg" class="subtext"></p>
           </section>
